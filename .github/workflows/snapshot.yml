@@ -1,0 +1,43 @@
+name: snapshot
+
+# Stores a dated copy of the two public boards under results/<UTC date>/.
+# The site's daily reasoning eval runs at 08:00 UTC; this runs 90 minutes later.
+# It needs no secrets: it reads two public endpoints and commits with the
+# workflow's own token.
+on:
+  schedule:
+    - cron: "30 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Take the snapshot
+        run: node scripts/snapshot.mjs
+
+      - name: Commit only if something changed
+        run: |
+          if [ -z "$(git status --porcelain -- results)" ]; then
+            echo "Nothing changed, nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add results
+          git commit -m "results: snapshot $(date -u +%Y-%m-%d)"
+          git push

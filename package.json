@@ -1,0 +1,25 @@
+{
+  "name": "swb-llm-evals",
+  "version": "0.1.0",
+  "description": "Tasks, graders, method, a runner for your own key and dated results behind the LLM provider boards of Sahara World Business.",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "author": "Sahara World Business",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p .",
+    "reproduce": "tsx src/reproduce.ts",
+    "analyze": "node analysis/analyze-leaderboard.mjs",
+    "snapshot": "node scripts/snapshot.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "tsx": "^4.22.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.7"
+  }
+}
