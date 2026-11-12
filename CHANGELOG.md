@@ -2,9 +2,14 @@
 
 Two things change over time and they are kept apart here: the method that the boards follow, and this repository.
 
-A change to a prompt, a grader, the system prompt, the output cap or the thinking setting can move a score, so it is a new method version. It gets an entry under "Method versions" and a change in `src/eval-tasks.ts` (see the header of that file). Dated results of different versions are never merged: each folder in `results/` says, in its `method` block, which version produced it.
+A change to a prompt, a grader, the system prompt, the output cap or the thinking setting can move a score, so it is a new method version. For the reasoning eval it gets an entry under "Reasoning eval versions" and a change in `src/eval-tasks.ts` (see the header of that file). The latency board has its own version, the ping version, with its entries under "Latency ping versions". Dated results of different versions are never merged: the `method` block saved in each reasoning result says which version produced it, and the latency file says it from ping version 2 on (the latency file of 2026-11-12 was taken earlier, has no `method` block and describes the 120-token ping).
 
-## Method versions
+## Reasoning eval versions
+
+### No new version, 2026-11-12
+
+- The `method` block of `GET /api/eval/leaderboard` now also carries `generatorVersion` and, for each task, `templateId` and `control`.
+- A generator for rotating task instances exists in the site's code and is not in use. The eval still asks the six fixed tasks, each one its own template and a control, so nothing that moves a score changed and the version stays 2.
 
 ### Version 2, from 2026-11-12
 
@@ -22,7 +27,39 @@ Why: under version 1 one provider showed about 75%. Of the 35 tasks it had answe
 - Cut-off answers were not recorded, so a cut-off was graded like a wrong answer.
 - Runs did not carry a version number. They are not part of the board for version 2 and are not in this repository.
 
+## Latency ping versions
+
+### Ping version 3, from 2026-11-12
+
+- Output cap of the scheduled ping raised from 400 to 1,000 tokens, thinking included.
+- The live "race" on the site keeps its 120-token cap. It is not part of this board.
+
+Why: in the first five real pings under version 2, one provider was still cut off at 400 every time. Measured directly, its complete answer used 558 to 739 tokens.
+
+### Ping version 2, from 2026-11-12
+
+- Output cap raised from 120 to 400 tokens, thinking included.
+- Each ping records whether the answer was cut off by the cap, and the board returns how many pings in the window were cut off (`truncatedPings`) and a `method` block with the prompt, the cap and the ping version.
+- Pings carry their version, and the board aggregates only the current one.
+- The speed tab sorts by the time to the complete short answer. The badge goes to the fastest provider only if it had no cut-off ping in the window and at least five pings. The first-token column and the per-row "thinking off" tag are unchanged.
+
+Why: under version 1, three of the four providers had stopped at the 120-token cap in at least 25 of 28 pings in a week, so the "complete answer" time was complete for one provider only. See "Ping method versions" in `METHODOLOGY.md`.
+
+### Ping version 1, until 2026-11
+
+- 120-token output cap, one short prompt, thinking off for the models that have a switch.
+- Cut-offs were not recorded and pings carried no version. They are not part of the board for version 2 and are not in this repository, except as the published numbers in `results/2026-11-12/arena-leaderboard.json`.
+
 ## This repository
+
+### 2026-11-12, latency board and documentation update
+
+- `METHODOLOGY.md`, `README.md`, `README.en.md`: updated to ping version 3 (1,000-token cap, cut-off pings, the badge rule, ping versions), the counts the reasoning tab now shows instead of a percentage, the new limits, and the unused task generator.
+- `references/literature.md`: added Huyen (2025), "AI Engineering", chapter 9, as a source for the latency definitions. It is a printed book, checked on 2026-11-12 in a printed copy and not opened online.
+- `analysis/analyze-leaderboard.mjs`: new copy of the analysis script. It now reads `truncatedPings` and the latency `method` block, prints the pings cut off at the cap, and says when the leader's time may be the time to run out of tokens.
+- `test/eval-tasks.test.ts`: the comparison with the saved `method` block now ignores the fields this repository does not define (`generatorVersion`, `templateId`, `control`). Prompts, expected answers, system prompt, cap and thinking setting are still compared exactly, and two new tests check that.
+- Not changed: `src/eval-tasks.ts` (same six tasks, graders and expected answers), `src/reproduce.ts`, the workflows and `results/`.
+- Not included yet: the runner of the latency board.
 
 ### 2026-11-12, first entry
 

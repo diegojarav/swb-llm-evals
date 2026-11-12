@@ -122,13 +122,23 @@ function analyseArena(board) {
             // The ping switches thinking off only for models that have a switch.
             // null = the API did not say (response from before the field existed).
             thinkingOff: typeof e.thinkingOff === "boolean" ? e.thinkingOff : null,
+            // Pings in the window that stopped at the output-token cap. The time
+            // of such a ping is when the tokens ran out, not a complete answer.
+            // null = the API did not say (response from before the field existed).
+            truncatedPings: typeof e.truncatedPings === "number" ? e.truncatedPings : null,
             // A P90 is set by the slowest tenth of the samples: with 28 samples
             // that is about 3 observations, so it moves a lot from week to week.
             samplesBehindP90: Math.max(0, Math.round(n * 0.1)),
             p90HasInterval: n >= MIN_SAMPLES_FOR_P90,
         };
     });
-    return { updatedAt: board.updatedAt ?? null, windowDays: board.windowDays ?? null, providers };
+    return {
+        updatedAt: board.updatedAt ?? null,
+        windowDays: board.windowDays ?? null,
+        methodVersion: board.method?.methodVersion ?? null,
+        maxOutputTokens: board.method?.maxOutputTokens ?? null,
+        providers,
+    };
 }
 
 const rankBy = (rows, key) =>
@@ -150,6 +160,20 @@ function crossBoard(evalA, arenaA) {
         notes.push(
             `${byFirstToken[0]} is first to the first token (thinking off, short answer) and last to a ` +
                 "complete answer in the reasoning eval (thinking on). Both are real; they are different clocks."
+        );
+    }
+    // The board's badge goes to the lowest complete-short-answer time, and only
+    // if that provider had no ping cut off at the token cap. Say when it cannot.
+    const shortLeader = arenaA.providers.find((p) => p.provider === byShortAnswer[0]);
+    if (shortLeader && shortLeader.truncatedPings == null) {
+        notes.push(
+            `${shortLeader.provider} leads the complete short answer, but this response does not say how many of its pings were cut off by the token cap, ` +
+                "so the time may be the time to run out of tokens, not to a complete answer."
+        );
+    } else if (shortLeader && shortLeader.truncatedPings > 0) {
+        notes.push(
+            `${shortLeader.provider} leads the complete short answer, but ${shortLeader.truncatedPings} of its ${shortLeader.samples} pings were cut off by the token cap: ` +
+                "its time includes them, and the board gives no badge."
         );
     }
     const leader = arenaA.providers.find((p) => p.provider === byFirstToken[0]);
@@ -205,13 +229,20 @@ function markdown(a) {
     L.push("");
     L.push("## Latency board");
     L.push("");
-    L.push("| Provider | Thinking in the ping | Samples | Success | First token (median / P90) | Complete short answer (median / P90) | Tokens per second | Samples behind the P90 |");
-    L.push("|---|---|---|---|---|---|---|---|");
+    L.push("| Provider | Thinking in the ping | Samples | Success | First token (median / P90) | Complete short answer (median / P90) | Pings cut off at the cap | Tokens per second | Samples behind the P90 |");
+    L.push("|---|---|---|---|---|---|---|---|---|");
     for (const p of a.arena.providers) {
         L.push(
             `| ${p.provider} | ${p.thinkingOff == null ? "not stated" : p.thinkingOff ? "off" : "on"} | ${p.samples} | ${p.successes ?? "n/a"}/${p.samples}` +
                 `${p.successWilson ? ` (${pct(p.successWilson.lo)} to ${pct(p.successWilson.hi)})` : ""} | ` +
-                `${num(p.ttftMs)} / ${num(p.ttftP90Ms)} ms | ${num(p.totalMs)} / ${num(p.totalP90Ms)} ms | ${num(p.tokensPerSec)} | ${p.samplesBehindP90} |`
+                `${num(p.ttftMs)} / ${num(p.ttftP90Ms)} ms | ${num(p.totalMs)} / ${num(p.totalP90Ms)} ms | ${p.truncatedPings ?? "n/a"} | ${num(p.tokensPerSec)} | ${p.samplesBehindP90} |`
+        );
+    }
+    if (a.arena.methodVersion != null) {
+        L.push("");
+        L.push(
+            `Ping method version ${a.arena.methodVersion}, output cap ${a.arena.maxOutputTokens ?? "n/a"} tokens (thinking included). ` +
+                "A cut-off ping's time is when the tokens ran out, not the time to a complete answer."
         );
     }
     if (a.arena.providers.some((p) => !p.p90HasInterval)) {

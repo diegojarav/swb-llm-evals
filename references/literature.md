@@ -1,6 +1,6 @@
 # Published work behind the method
 
-What the literature supports in our design, and what it says we should change. Collected on 2026-11-12. Every source in the first two tables was opened that day (the arXiv abstract page, the journal page or the methodology page) and the title, authors, year and claim were checked against it; four were opened a second time independently (Akhtar, Guedes de Souza, Miller, Erol). Findings are paraphrased from abstracts and pages, not from full PDFs, except Hagendorff et al. (full text). "Not peer-reviewed" means an arXiv preprint.
+What the literature supports in our design, and what it says we should change. Collected on 2026-11-12. Every source in the first two tables was opened that day (the arXiv abstract page, the journal page or the methodology page) and the title, authors, year and claim were checked against it; four were opened a second time independently (Akhtar, Guedes de Souza, Miller, Erol). The one exception is Huyen 2025, a printed book: its passage was checked in a printed copy on 2026-11-12 and it was not opened online. Findings are paraphrased from abstracts and pages, not from full PDFs, except Hagendorff et al. (full text). "Not peer-reviewed" means an arXiv preprint.
 
 When you cite one of these in a doc, a PR or the site, open it again first: preprints get revised and withdrawn (the arXiv version of Hagendorff et al. was).
 
@@ -32,6 +32,7 @@ When you cite one of these in a doc, a PR or the site, open it again first: prep
 | Truncation mistaken for failure | Lawsen 2025, comment on Shojaee et al. Not peer-reviewed. https://arxiv.org/abs/2506.09250 | Argues that a reported "accuracy collapse" partly reflects output-token limits. | Supports the separate "cut off" category. This is what happened to us with the 800 cap. |
 | Re-running daily | Chen, Zaharia and Zou 2023, "How is ChatGPT's behavior changing over time?". https://arxiv.org/abs/2307.09009 | The same hosted models changed noticeably within three months on fixed tasks; the authors call for continuous monitoring. | Supports repeated runs of a fixed set as a drift detector. |
 | Latency definitions | Artificial Analysis, API performance methodology v3.0.0 (2026-11-03). https://artificialanalysis.ai/methodology/performance-benchmarking | For reasoning models the first token is a reasoning token; a separate "time to first answer token" includes reasoning time. Runs every six hours and reports medians. | Our cadence matches. Tools define these terms differently, so publish ours: thinking off, first visible token, short answer. |
+| First visible token, time per token | Huyen 2025, "AI Engineering: Building Applications with Foundation Models", O'Reilly, chapter 9, "Inference Optimization". A printed book, so no URL: passage checked in a printed copy on 2026-11-12, not opened online like the other sources. | Separates the time to first token from the time per output token: total latency is roughly the first plus the second times the number of output tokens. When a model produces hidden intermediate steps (a plan, a chain of thought), the first token the user sees comes later than the first token the model generates; some teams use a metric called "time to publish" for the former. | Our first-token column is the first VISIBLE token, so it is time to publish in this sense, and it is why a model that thinks starts late. The formula explains the three clocks in METHODOLOGY.md: a quick start with a slow rate per token can still finish last. |
 
 ## 2. Secondary sources (also opened)
 
@@ -54,11 +55,11 @@ Ranked. None of these is done unless METHODOLOGY.md or CHANGELOG.md says so; eac
 5. **Report the cut-off rate next to accuracy and keep the cap in the method version.** (Guedes de Souza; Lawsen)
 6. **More than one false-premise item, some without the "answer NO_EXISTE" escape hatch.** (AbstentionBench)
 7. **Narrow the structured-output claim to "simple JSON".** (JSONSchemaBench)
-8. **Publish latency definitions and sample counts.** (Artificial Analysis)
+8. **Publish latency definitions and sample counts.** (Artificial Analysis; Huyen)
 
 ## 4. What we can say today
 
-It is a daily check on six small tasks with exactly one correct answer each, graded by code and not by another model. When every provider gets every task right, the board shows that they all pass these tasks, not that they are equally good. Six tasks are too few to separate close providers, and one of them is a famous puzzle that models may have memorised. Answers cut off by the token limit are reported separately from wrong ones. Cost per correct answer and reasoning share describe this setup at these list prices. The latency board measures one short prompt with thinking off, from our own server, and does not predict speed on long or reasoning-heavy requests.
+It is a daily check on six small tasks with exactly one correct answer each, graded by code and not by another model. When every provider gets every task right, the board shows that they all pass these tasks, not that they are equally good. Six tasks are too few to separate close providers, and one of them is a famous puzzle that models may have memorised. Answers cut off by the token limit are reported separately from wrong ones. Cost per correct answer and reasoning share describe this setup at these list prices. The latency board measures one short prompt (three sentences), with thinking off where the model has a switch, from our own server. It ranks by the time to the complete short answer, gives its badge only to a leader with no ping cut off by the token cap, and does not predict speed on long or reasoning-heavy requests.
 
 ## 5. Leads that were not opened
 

@@ -240,17 +240,63 @@ describe("stored results were made with this task set", () => {
     // expected answers, the system prompt, the cap and the thinking setting must
     // be the ones in this repository. A later version is skipped here: when the
     // site moves to it, this copy has to be updated (see CHANGELOG.md).
+    //
+    // Since 2026-11-12 the block can carry more than this repository defines:
+    // `generatorVersion` on the block and `templateId` and `control` on each
+    // task. Those fields are ignored here. Every field this repository does
+    // define (id, prompt, expected, systemPrompt, cap, thinking) is still
+    // compared exactly, and so is the number and the order of the tasks.
     const METHOD_VERSION = 2;
     const dir = new URL("results/", root);
     const file = (day: string) => new URL(`results/${day}/eval-leaderboard.json`, root);
     const days = existsSync(dir) ? readdirSync(dir).filter((d) => existsSync(file(d))) : [];
     const v2 = days.filter((d) => JSON.parse(readFileSync(file(d), "utf8")).method?.methodVersion === METHOD_VERSION);
 
+    // The task fields this repository defines, in the shape the site publishes.
+    const ownTasks = () => EVAL_TASKS.map((t) => ({ id: t.id, prompt: t.prompt, expected: t.expected }));
+    // A saved block's tasks reduced to those same three fields.
+    const savedTasks = (method: { tasks: unknown }) => {
+        expect(Array.isArray(method.tasks)).toBe(true);
+        return (method.tasks as Array<{ id: unknown; prompt: unknown; expected: unknown }>).map((t) => ({
+            id: t.id,
+            prompt: t.prompt,
+            expected: t.expected,
+        }));
+    };
+
     it.each(v2)("%s: the published method block matches src/eval-tasks.ts", (day) => {
         const { method } = JSON.parse(readFileSync(file(day), "utf8"));
         expect(method.systemPrompt).toBe(EVAL_SYSTEM);
-        expect(method.tasks).toEqual(EVAL_TASKS.map((t) => ({ id: t.id, prompt: t.prompt, expected: t.expected })));
+        expect(savedTasks(method)).toEqual(ownTasks());
         expect(method.maxOutputTokens).toBe(4000);
         expect(method.thinking).toBe(true);
+    });
+
+    describe("the comparison itself", () => {
+        const withExtras = () => ({
+            tasks: ownTasks().map((t) => ({ ...t, templateId: t.id, control: true })),
+            generatorVersion: 1,
+        });
+
+        it("ignores the fields this repository does not define", () => {
+            expect(savedTasks(withExtras())).toEqual(ownTasks());
+        });
+        it("still catches a changed prompt, a changed expected answer, a missing task and a different order", () => {
+            const changedPrompt = withExtras();
+            changedPrompt.tasks[0].prompt += " ";
+            expect(savedTasks(changedPrompt)).not.toEqual(ownTasks());
+
+            const changedExpected = withExtras();
+            changedExpected.tasks[1].expected = "jueves";
+            expect(savedTasks(changedExpected)).not.toEqual(ownTasks());
+
+            const missing = withExtras();
+            missing.tasks.pop();
+            expect(savedTasks(missing)).not.toEqual(ownTasks());
+
+            const reordered = withExtras();
+            reordered.tasks.reverse();
+            expect(savedTasks(reordered)).not.toEqual(ownTasks());
+        });
     });
 });
