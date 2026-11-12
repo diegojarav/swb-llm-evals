@@ -52,6 +52,16 @@ Why: under version 1, three of the four providers had stopped at the 120-token c
 
 ## This repository
 
+### 2026-11-12, security review of the scripts and workflows
+
+- `src/reproduce.ts`: control characters (C0 and C1, so also escape sequences) in text that comes from the endpoint are replaced by a space before the error line is printed, and are written out as `\uXXXX` in `--show-answers`. A hostile endpoint can no longer erase rows or draw a result line of its own. Two tests cover it.
+- `analysis/analyze-leaderboard.mjs`: every value read from a board is cleaned before it is used. Control characters are removed, line breaks and a leading `#` cannot add a line or a heading to the report, a `|` cannot split a table cell, and the length is capped. A value that is not a number where a number belongs is ignored. The request has a 30 s time limit. A file or response that is not valid JSON is reported by name, without repeating its text.
+- `analysis/analyze-leaderboard.mjs` and `scripts/snapshot.mjs`: the `?t=` cache-buster is gone from the request URL. The boards change at most every six hours and the CDN keeps them for five minutes, so it only forced the site to render them again.
+- `scripts/snapshot.mjs`: a board that comes back with no entries is still written, as the site served it, and the log now says so. Values from the response are cleaned before they are printed, and a response that is not JSON is not quoted.
+- `.github/workflows/`: the actions are pinned to full commit SHAs (`actions/checkout` v7.0.1, `actions/setup-node` v6.5.0, the same in both files). The CI checkout no longer keeps credentials. The snapshot job pulls with a rebase before it pushes, and tries up to three times, so a push by the owner at the same moment does not lose the day.
+- Added `.github/dependabot.yml` (npm and GitHub Actions, weekly, three pull requests at most each; the pinned actions are moved by it), `SECURITY.md` (linked from both READMEs) and `results/2026-11-12/NOTE.md` (that day's latency rows come from the 120-token ping and are not valid for comparing providers).
+- Not changed: `src/eval-tasks.ts`, the method and its versions, and the data and analysis files in `results/2026-11-12/`.
+
 ### 2026-11-12, latency board and documentation update
 
 - `METHODOLOGY.md`, `README.md`, `README.en.md`: updated to ping version 3 (1,000-token cap, cut-off pings, the badge rule, ping versions), the counts the reasoning tab now shows instead of a percentage, the new limits, and the unused task generator.

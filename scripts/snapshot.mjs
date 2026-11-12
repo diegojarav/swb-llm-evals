@@ -36,9 +36,19 @@ if (!/^https?:\/\//.test(BASE)) {
 const ATTEMPTS = 3;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Text from a response, made safe for one line of the log: control characters
+ * (escape sequences, line breaks) become spaces and the length is capped. Only
+ * what is printed goes through this; the JSON is written to disk as it came.
+ */
+const oneLine = (value) => {
+    const flat = String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/ +/g, " ").trim();
+    return flat.length > 120 ? `${flat.slice(0, 120)}...` : flat;
+};
+
 /** GET one public board, retrying a few times on a network error or a 5xx. */
 async function fetchBoard(kind) {
-    const url = `${BASE}/api/${kind}/leaderboard?t=${Date.now()}`;
+    const url = `${BASE}/api/${kind}/leaderboard`;
     let lastError;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
         try {
@@ -48,7 +58,10 @@ async function fetchBoard(kind) {
             });
             if (res.status >= 500) throw new Error(`${url} answered ${res.status}`);
             if (!res.ok) throw Object.assign(new Error(`${url} answered ${res.status}`), { fatal: true });
-            const json = await res.json();
+            // A SyntaxError message quotes the start of the body: do not repeat it.
+            const json = await res.json().catch((e) => {
+                throw e?.name === "SyntaxError" ? new Error(`${url} did not return valid JSON`) : e;
+            });
             if (!json || !Array.isArray(json.entries)) {
                 throw Object.assign(new Error(`${url} did not return the expected shape (no "entries" array)`), {
                     fatal: true,
@@ -96,12 +109,22 @@ async function main() {
 
     console.log(`Wrote results/${date}/ (eval-leaderboard.json, arena-leaderboard.json, analysis.md)`);
     console.log(
-        `Eval board updated ${evalBoard.updatedAt ?? "never"} (method version ${evalBoard.method?.methodVersion ?? "not stated"}), ` +
-            `latency board updated ${arenaBoard.updatedAt ?? "never"}.`,
+        `Eval board updated ${oneLine(evalBoard.updatedAt ?? "never")} (method version ${oneLine(evalBoard.method?.methodVersion ?? "not stated")}), ` +
+            `latency board updated ${oneLine(arenaBoard.updatedAt ?? "never")}.`,
     );
+    // An empty board is what the site served, so it is written like any other;
+    // the line makes sure it does not pass unnoticed in the log.
+    for (const [name, board] of [
+        ["eval", evalBoard],
+        ["latency", arenaBoard],
+    ]) {
+        if (board.entries.length === 0) {
+            console.log(`WARNING: the ${name} board came back empty ("entries" has no items). It was written as the site served it.`);
+        }
+    }
 }
 
 main().catch((err) => {
-    console.error(`snapshot failed: ${err.message}`);
+    console.error(`snapshot failed: ${oneLine(err?.message ?? err)}`);
     process.exit(1);
 });

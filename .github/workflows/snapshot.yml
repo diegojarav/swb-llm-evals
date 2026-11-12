@@ -21,9 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      # Keeps its credentials (the default): the last step pushes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
 
@@ -40,4 +41,14 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add results
           git commit -m "results: snapshot $(date -u +%Y-%m-%d)"
-          git push
+          # A push by the owner may have landed while this job ran: put the
+          # day on top of it instead of losing it to a rejected push.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin main
+            if git push; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Could not push the snapshot after 3 attempts." >&2
+          exit 1

@@ -260,11 +260,34 @@ export function readCompletion(body: unknown): Completion | null {
     };
 }
 
-/** Replace every occurrence of the key, and flatten whitespace, in text we may show. */
+/**
+ * C0 and C1 control characters (ESC, CSI, OSC, BEL, CR, DEL and the rest). The
+ * endpoint decides what its error text says, and a terminal obeys these
+ * characters: a hostile endpoint could use them to erase rows or draw a
+ * result line that was never produced. None of them is ever shown.
+ */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+
+/**
+ * Text that came from the endpoint, made safe to show on one line: the key is
+ * replaced, control characters become spaces, then whitespace is flattened.
+ */
 function safeSnippet(text: string, apiKey: string, max = 200): string {
     const redacted = apiKey ? text.split(apiKey).join("[redacted]") : text;
-    const flat = redacted.replace(/\s+/g, " ").trim();
+    const flat = redacted.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
     return flat.length > max ? `${flat.slice(0, max)}...` : flat;
+}
+
+/**
+ * A string in quotes with every control character written out. JSON.stringify
+ * already escapes the C0 range; DEL and the C1 range it leaves as they are, so
+ * those are escaped here.
+ */
+function quoted(text: string): string {
+    return JSON.stringify(text).replace(
+        /[\u007f-\u009f]/g,
+        (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    );
 }
 
 /** The error message of a provider's JSON error body, else the raw text. */
@@ -410,7 +433,7 @@ export async function runAll(
         out(formatRow(r));
         if (r.error) out(`  error: ${r.error}`);
         if (options.showAnswers && r.answered) {
-            out(`  answer: ${JSON.stringify(r.answer.length > 300 ? `${r.answer.slice(0, 300)}...` : r.answer)}`);
+            out(`  answer: ${quoted(r.answer.length > 300 ? `${r.answer.slice(0, 300)}...` : r.answer)}`);
         }
     }
 

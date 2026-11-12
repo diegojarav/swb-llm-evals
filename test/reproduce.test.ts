@@ -206,6 +206,59 @@ describe("reproduce: HTTP 500", () => {
     });
 });
 
+// What a terminal obeys: C0 (ESC, BEL, CR, newline...), DEL and C1 (CSI...).
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+
+// A hostile endpoint: its text tries to clear the screen, retitle the window,
+// move the cursor up over the previous rows and then write a line of its own.
+const HOSTILE =
+    "bad request\u001b[2J\u001b[1A\u001b[2K\u001b]0;pwned\u0007\r\n" +
+    "Correct: 6 / 6\n\u009b2K\u009d0;x\u009c\u007f";
+
+describe("reproduce: text from a hostile endpoint", () => {
+    async function runLines(baseUrl: string, extraArgs: string[] = []) {
+        const out: string[] = [];
+        const code = await main(
+            ["--base-url", baseUrl, "--model", "fake-model", ...extraArgs],
+            { LLM_API_KEY: KEY },
+            (l) => out.push(l),
+            () => undefined,
+        );
+        return { code, out };
+    }
+
+    it("shows no control character from an error body, JSON or not, and cannot forge a result line", async () => {
+        const fake = await start((id) =>
+            id === "arithmetic"
+                ? { status: 500, body: { error: { message: HOSTILE } } }
+                : { status: 502, body: null, raw: HOSTILE },
+        );
+        const { code, out } = await runLines(fake.baseUrl);
+
+        expect(code).toBe(2);
+        // Each element is one console.log call: none may hold a control
+        // character, since a newline or an ESC would be obeyed by the terminal.
+        for (const line of out) expect(line).not.toMatch(CONTROL);
+        // The only "Correct:" line is the real one.
+        expect(out.filter((l) => l.startsWith("Correct:"))).toEqual(["Correct: 0 / 6"]);
+        // The text itself is still there, on the error line, flattened.
+        expect(out.find((l) => l.startsWith("  error: HTTP 500"))).toContain("Correct: 6 / 6");
+    });
+
+    it("--show-answers writes control characters out instead of sending them", async () => {
+        const fake = await start(() => completion(HOSTILE));
+        const { out } = await runLines(fake.baseUrl, ["--show-answers"]);
+
+        const answers = out.filter((l) => l.startsWith("  answer: "));
+        expect(answers).toHaveLength(6);
+        for (const line of out) expect(line).not.toMatch(CONTROL);
+        expect(answers[0]).toContain("\\u001b");
+        expect(answers[0]).toContain("\\u009b");
+        expect(answers[0]).toContain("\\u007f");
+        expect(out.filter((l) => l.startsWith("Correct:"))).toEqual(["Correct: 0 / 6"]);
+    });
+});
+
 describe("reproduce: odd responses", () => {
     it("a 200 whose body is not JSON is an error, not a wrong answer", async () => {
         const fake = await start(() => ({ raw: "<html>nope</html>", body: null }));

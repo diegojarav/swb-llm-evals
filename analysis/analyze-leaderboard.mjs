@@ -43,33 +43,92 @@ const MIN_SAMPLES_FOR_P90 = 29;
 const pct = (x, d = 1) => (x == null ? "n/a" : `${(x * 100).toFixed(d)}%`);
 const num = (x, d = 0) => (x == null ? "n/a" : Number(x).toFixed(d));
 
+// ---------- text that comes from a response ----------
+// A board, from the network or from a saved file, is data from outside. Every
+// value read from it goes through cleanText or cleanNumber first, so that no
+// value can steer the terminal (escape sequences), add a line or a heading to
+// the Markdown report, or add a column to a table row.
+
+/** C0 and C1 control characters (ESC, CSI, OSC, BEL, CR, newline, DEL...). */
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+const MAX_TEXT = 120;
+
+/**
+ * A string from a response, made safe to print inside one line of the report:
+ * control characters (line breaks included) become spaces, whitespace is
+ * flattened, the length is capped, a "|" is escaped so it cannot split a table
+ * cell, and a leading "#" is escaped so it cannot make a heading. Anything that
+ * is not a string comes back as null.
+ */
+export function cleanText(value, max = MAX_TEXT) {
+    if (typeof value !== "string") return null;
+    const flat = value.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+    const short = flat.length > max ? `${flat.slice(0, max)}...` : flat;
+    const cell = short.replace(/\|/g, "\\|");
+    return cell.startsWith("#") ? `\\${cell}` : cell;
+}
+
+/** A number from a response, or null when it is not a finite number. */
+export function cleanNumber(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** A version-like field: a finite number or a cleaned string, else null. */
+const cleanScalar = (value) => (typeof value === "number" ? cleanNumber(value) : cleanText(value));
+
+/** The objects in an array from a response; anything else is ignored. */
+const objectsIn = (value) =>
+    Array.isArray(value) ? value.filter((v) => v && typeof v === "object" && !Array.isArray(v)) : [];
+
 // ---------- input ----------
+
+/** Parse a board. The error names the source and never repeats its text. */
+function parseBoard(raw, source) {
+    let board;
+    try {
+        board = JSON.parse(raw);
+    } catch {
+        throw new Error(`${source} is not valid JSON`);
+    }
+    if (!board || typeof board !== "object" || Array.isArray(board)) {
+        throw new Error(`${source} is not a JSON object`);
+    }
+    return board;
+}
 
 async function load(kind) {
     const file = flag(kind);
-    if (typeof file === "string") return JSON.parse(await readFile(file, "utf8"));
-    const url = `${BASE}/api/${kind}/leaderboard?t=${Date.now()}`;
-    const res = await fetch(url, { headers: { accept: "application/json" } });
+    if (typeof file === "string") return parseBoard(await readFile(file, "utf8"), file);
+    const url = `${BASE}/api/${kind}/leaderboard`;
+    const res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-    return res.json();
+    return parseBoard(await res.text(), url);
 }
 
 // ---------- analysis ----------
 
 function analyseEval(board) {
-    const providers = (board.entries ?? []).map((e) => {
-        const tasks = e.taskBreakdown ?? [];
-        const attempts = tasks.reduce((s, t) => s + (t.attempts ?? 0), 0);
-        const passes = tasks.reduce((s, t) => s + (t.passes ?? 0), 0);
+    const providers = objectsIn(board.entries).map((e) => {
+        const tasks = objectsIn(e.taskBreakdown).flatMap((t) => {
+            const taskId = cleanText(t.taskId);
+            return taskId
+                ? [{ taskId, attempts: cleanNumber(t.attempts) ?? 0, passes: cleanNumber(t.passes) ?? 0 }]
+                : [];
+        });
+        const attempts = tasks.reduce((s, t) => s + t.attempts, 0);
+        const passes = tasks.reduce((s, t) => s + t.passes, 0);
         // The honest sample: items, not answers. An item counts as passed only
         // if the provider got it right every time it was asked.
-        const itemsAsked = tasks.filter((t) => (t.attempts ?? 0) > 0).length;
-        const itemsAlwaysPassed = tasks.filter((t) => (t.attempts ?? 0) > 0 && t.passes === t.attempts).length;
+        const itemsAsked = tasks.filter((t) => t.attempts > 0).length;
+        const itemsAlwaysPassed = tasks.filter((t) => t.attempts > 0 && t.passes === t.attempts).length;
+        const runs = cleanNumber(e.runs) ?? 0;
+        const reasoningOverheadPct = cleanNumber(e.reasoningOverheadPct);
+        const costPerCorrectUsd = cleanNumber(e.costPerCorrectUsd);
         return {
-            provider: e.provider,
-            model: e.model,
-            runs: e.runs ?? 0,
-            sufficient: e.status === "ok" && (e.runs ?? 0) >= MIN_RUNS,
+            provider: cleanText(e.provider) || "unknown",
+            model: cleanText(e.model),
+            runs,
+            sufficient: e.status === "ok" && runs >= MIN_RUNS,
             attempts,
             passes,
             accuracy: attempts ? passes / attempts : null,
@@ -77,10 +136,10 @@ function analyseEval(board) {
             itemsAsked,
             itemsAlwaysPassed,
             itemWilson: wilson(itemsAlwaysPassed, itemsAsked),
-            truncated: e.tasksTruncated ?? null,
-            reasoningShare: e.reasoningOverheadPct == null ? null : e.reasoningOverheadPct / 100,
-            avgTimeMs: e.avgTimeToAnswerMs ?? null,
-            costPer1000Correct: e.costPerCorrectUsd == null ? null : e.costPerCorrectUsd * 1000,
+            truncated: cleanNumber(e.tasksTruncated),
+            reasoningShare: reasoningOverheadPct == null ? null : reasoningOverheadPct / 100,
+            avgTimeMs: cleanNumber(e.avgTimeToAnswerMs),
+            costPer1000Correct: costPerCorrectUsd == null ? null : costPerCorrectUsd * 1000,
             tasks: Object.fromEntries(tasks.map((t) => [t.taskId, { passes: t.passes, attempts: t.attempts }])),
         };
     });
@@ -93,9 +152,9 @@ function analyseEval(board) {
     });
     const measured = providers.filter((p) => p.sufficient);
     return {
-        updatedAt: board.updatedAt ?? null,
-        windowDays: board.windowDays ?? null,
-        methodVersion: board.method?.methodVersion ?? null,
+        updatedAt: cleanText(board.updatedAt),
+        windowDays: cleanNumber(board.windowDays),
+        methodVersion: cleanScalar(board.method?.methodVersion),
         providers,
         items,
         independentItems: taskIds.length,
@@ -105,27 +164,28 @@ function analyseEval(board) {
 }
 
 function analyseArena(board) {
-    const providers = (board.entries ?? []).map((e) => {
-        const n = e.samples ?? 0;
-        const ok = e.successRate == null ? null : Math.round((e.successRate / 100) * n);
+    const providers = objectsIn(board.entries).map((e) => {
+        const n = cleanNumber(e.samples) ?? 0;
+        const successRate = cleanNumber(e.successRate);
+        const ok = successRate == null ? null : Math.round((successRate / 100) * n);
         return {
-            provider: e.provider,
-            model: e.model,
+            provider: cleanText(e.provider) || "unknown",
+            model: cleanText(e.model),
             samples: n,
             successes: ok,
             successWilson: ok == null ? null : wilson(ok, n),
-            ttftMs: e.ttftMs ?? null,
-            ttftP90Ms: e.ttftP90Ms ?? null,
-            totalMs: e.totalMs ?? null,
-            totalP90Ms: e.totalP90Ms ?? null,
-            tokensPerSec: e.tokensPerSec ?? null,
+            ttftMs: cleanNumber(e.ttftMs),
+            ttftP90Ms: cleanNumber(e.ttftP90Ms),
+            totalMs: cleanNumber(e.totalMs),
+            totalP90Ms: cleanNumber(e.totalP90Ms),
+            tokensPerSec: cleanNumber(e.tokensPerSec),
             // The ping switches thinking off only for models that have a switch.
             // null = the API did not say (response from before the field existed).
             thinkingOff: typeof e.thinkingOff === "boolean" ? e.thinkingOff : null,
             // Pings in the window that stopped at the output-token cap. The time
             // of such a ping is when the tokens ran out, not a complete answer.
             // null = the API did not say (response from before the field existed).
-            truncatedPings: typeof e.truncatedPings === "number" ? e.truncatedPings : null,
+            truncatedPings: cleanNumber(e.truncatedPings),
             // A P90 is set by the slowest tenth of the samples: with 28 samples
             // that is about 3 observations, so it moves a lot from week to week.
             samplesBehindP90: Math.max(0, Math.round(n * 0.1)),
@@ -133,10 +193,10 @@ function analyseArena(board) {
         };
     });
     return {
-        updatedAt: board.updatedAt ?? null,
-        windowDays: board.windowDays ?? null,
-        methodVersion: board.method?.methodVersion ?? null,
-        maxOutputTokens: board.method?.maxOutputTokens ?? null,
+        updatedAt: cleanText(board.updatedAt),
+        windowDays: cleanNumber(board.windowDays),
+        methodVersion: cleanScalar(board.method?.methodVersion),
+        maxOutputTokens: cleanNumber(board.method?.maxOutputTokens),
         providers,
     };
 }
@@ -277,7 +337,7 @@ async function main() {
 // Run only when executed directly, so the functions can be imported and tested.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
     main().catch((err) => {
-        console.error(`analysis failed: ${err.message}`);
+        console.error(`analysis failed: ${cleanText(String(err?.message ?? err), 300) || "unknown error"}`);
         process.exit(1);
     });
 }

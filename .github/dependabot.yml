@@ -1,0 +1,16 @@
+# The actions in .github/workflows are pinned to a full commit SHA, so nothing
+# moves them on its own: Dependabot is what opens the pull request that does.
+# The npm dev dependencies are kept current the same way.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
