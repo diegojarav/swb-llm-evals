@@ -3,11 +3,25 @@
 # The npm dev dependencies are kept current the same way.
 version: 2
 updates:
+  # Dev tooling only (TypeScript, vitest, type definitions): nothing here is
+  # shipped. Minor and patch updates come together in one pull request. Major
+  # versions are left for a manual pass, since they usually need a change to
+  # the scripts or the config, and security advisories are raised separately
+  # by Dependabot alerts whatever this file says.
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    groups:
+      dev-tooling:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: "/"
