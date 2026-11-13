@@ -17,7 +17,7 @@
     "snapshot": "node scripts/snapshot.mjs"
   },
   "devDependencies": {
-    "@types/node": "^20.19.41",
+    "@types/node": "^26.6.6",
     "tsx": "^4.22.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.7"
